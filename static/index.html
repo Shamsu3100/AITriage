@@ -1,0 +1,168 @@
+<!doctype html>
+<meta charset="utf-8"><title>Nexus AI Triage</title>
+<style>
+ body{font:15px system-ui;max-width:860px;margin:32px auto;padding:0 16px;color:#222}
+ h1{margin-bottom:4px} .sub{color:#666;margin-top:0}
+ input,button,select{padding:8px;font-size:15px;font-family:inherit}
+ button{cursor:pointer;font-weight:600}
+ label{display:block;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+ .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:14px 0}
+ .fixed{background:#f5f5f5;color:#555;border:1px solid #ddd;border-radius:4px;
+        padding:9px 10px;font-size:14px;white-space:nowrap}
+ .normal{color:#0a7d28} .warning{color:#b36b00} .critical{color:#c00}
+ .card{border:1px solid #e3e3e3;border-radius:8px;padding:14px 16px;margin:18px 0}
+ .half{padding:10px 0;border-bottom:1px dashed #e8e8e8} .half:last-child{border:0}
+ .tag{font-size:10px;letter-spacing:.6px;text-transform:uppercase;padding:2px 7px;
+      border-radius:9px;font-weight:700}
+ .tag-code{background:#e6f4ea;color:#0a7d28} .tag-ai{background:#eef0fc;color:#3b46b8}
+ .verdict{font-size:26px;font-weight:700;margin:6px 0 2px}
+ .ms{font-size:12px;color:#999;font-weight:400} .spin{color:#999;font-style:italic}
+ .err{color:#c00;font-size:13px;min-height:1em}
+ table{border-collapse:collapse;width:100%;margin-top:8px}
+ th{text-align:left;font-size:11px;color:#888;text-transform:uppercase;
+    border-bottom:2px solid #ddd;padding:6px 8px}
+ td{padding:5px 8px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+ .bar{display:flex;justify-content:space-between;align-items:center;margin-top:22px}
+ .bar button{font-size:13px;padding:5px 10px;font-weight:400}
+</style>
+
+<h1>AI Triage Dashboard</h1>
+<p class="sub">One codebase. Pick any track below; the backend never changes.</p>
+
+<div class="row">
+  <div style="flex:1;min-width:300px">
+    <label>scenario</label>
+    <select id="preset" onchange="applyPreset()" style="width:100%"></select>
+  </div>
+  <div><label>reading</label><input id="value" type="number" step="any" style="width:100px"></div>
+  <div><label>unit</label><div class="fixed" id="unitBox">-</div></div>
+  <div><label>safe range</label><div class="fixed" id="rangeBox">-</div></div>
+  <button onclick="send()">Send reading</button>
+</div>
+<div class="err" id="err"></div>
+
+<div class="card">
+  <div class="half">
+    <span class="tag tag-code">1 - from code</span>
+    <div class="verdict" id="verdict">-</div>
+    <div class="ms" id="vms">pick a scenario and press Send reading</div>
+  </div>
+  <div class="half">
+    <span class="tag tag-ai">2 - from the AI model</span>
+    <div id="ai" style="margin-top:6px">-</div>
+    <div class="ms" id="ams"></div>
+  </div>
+</div>
+
+<div class="bar">
+  <span id="queue" class="ms"></span>
+  <button onclick="clearAll()">Clear history</button>
+</div>
+<table>
+  <thead><tr><th style="width:70px">time</th><th>reading</th>
+    <th style="width:90px">severity<div style="font-weight:400;text-transform:none">code</div></th>
+    <th>explanation<div style="font-weight:400;text-transform:none">AI model</div></th></tr></thead>
+  <tbody id="tbl"></tbody>
+</table>
+
+<script>
+// One shape (a number plus a safe range) covers every Project Nexus track.
+var PRESETS = {
+ "Healthcare": [
+   {n:"Body temperature", s:"body_temp",  u:"C",   lo:36.1, hi:37.2, demo:39.4},
+   {n:"Heart rate",       s:"heart_rate", u:"bpm", lo:60,   hi:100,  demo:142},
+   {n:"Blood oxygen",     s:"spo2",       u:"%",   lo:95,   hi:100,  demo:88}
+ ],
+ "Sustainable Solutions": [
+   {n:"Indoor CO2",       s:"co2",        u:"ppm", lo:400,  hi:1000, demo:1450},
+   {n:"Room power draw",  s:"power_draw", u:"W",   lo:0,    hi:3500, demo:4800},
+   {n:"Waste bin fill",   s:"bin_fill",   u:"%",   lo:0,    hi:80,   demo:96}
+ ],
+ "Global Impact": [
+   {n:"Soil moisture",    s:"soil_moisture", u:"%", lo:30,  hi:70,   demo:8},
+   {n:"Water tank level", s:"tank_level",    u:"%", lo:20,  hi:90,   demo:12},
+   {n:"Motor temperature",s:"motor_temp",    u:"C", lo:20,  hi:60,   demo:87}
+ ]
+};
+
+var current = null;
+
+function build(){
+  var html = "";
+  Object.keys(PRESETS).forEach(function(track){
+    html += '<optgroup label="' + track + '">';
+    PRESETS[track].forEach(function(p, i){
+      html += '<option value="' + track + '|' + i + '">' + p.n +
+              ' (safe ' + p.lo + '-' + p.hi + ' ' + p.u + ')</option>';
+    });
+    html += '</optgroup>';
+  });
+  document.getElementById("preset").innerHTML = html;
+  applyPreset();
+}
+
+function applyPreset(){
+  var parts = document.getElementById("preset").value.split("|");
+  current = PRESETS[parts[0]][+parts[1]];
+  unitBox.textContent  = current.u;
+  rangeBox.textContent = current.lo + " - " + current.hi + " " + current.u;
+  value.value = current.demo;
+  err.textContent = "";
+}
+
+async function send(){
+  err.textContent = "";
+  var v = parseFloat(value.value);
+  if(value.value.trim() === "" || Number.isNaN(v)){
+    err.textContent = "Reading must be a number."; return;
+  }
+  verdict.textContent="-"; vms.textContent=""; ai.textContent="-"; ams.textContent="";
+  var t0 = performance.now();
+  var res = await fetch("/ingest", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({sensor:current.s, value:v, unit:current.u,
+      normal_range: current.lo + "-" + current.hi + " " + current.u})});
+  if(!res.ok){ err.textContent = "Server rejected it: " + JSON.stringify(await res.json()); return; }
+  var r = await res.json(), ms = Math.round(performance.now() - t0);
+
+  verdict.innerHTML = '<span class="' + r.severity + '">' + r.severity.toUpperCase() + '</span>';
+  vms.textContent = "rule: " + current.lo + " <= reading <= " + current.hi +
+                    "   answered in " + ms + " ms";
+  ai.innerHTML = '<span class="spin">waiting for the model...</span>';
+  load();
+
+  var t1 = performance.now();
+  while(performance.now() - t1 < 180000){
+    var row = await (await fetch("/readings/" + r.id)).json();
+    if(row.ai_status === "done"){
+      ai.innerHTML = row.reason + "<br><em>" + row.action + "</em>";
+      ams.textContent = "written by the model in " +
+                        ((performance.now()-t1)/1000).toFixed(1) + "s";
+      break;
+    }
+    await new Promise(function(f){ setTimeout(f, 400); });
+  }
+  load();
+}
+
+async function clearAll(){
+  await fetch("/readings", {method:"DELETE"});
+  load();
+}
+
+async function load(){
+  var rows = await (await fetch("/readings")).json();
+  var q    = await (await fetch("/queue")).json();
+  queue.textContent = q.pending ? (q.pending + " reading(s) queued for the model") : "";
+  tbl.innerHTML = rows.length ? rows.map(function(r){
+    return "<tr><td>" + (r.ts||"").slice(11) + "</td><td>" + r.sensor + " " + r.value + r.unit +
+      '</td><td class="' + r.severity + '"><b>' + r.severity + "</b></td><td>" +
+      (r.ai_status === "done" ? (r.reason||"") : '<span class="spin">queued...</span>') +
+      "</td></tr>";
+  }).join("") : '<tr><td colspan="4" class="ms">no readings yet</td></tr>';
+}
+
+build();
+load();
+setInterval(load, 1500);
+</script>
