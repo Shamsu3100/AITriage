@@ -175,7 +175,7 @@ Now anyone who clones the repo runs one command:
 
 ```bash
 git show <old-commit>:app.py
-# client = anthropic.Anthropic(api_key="sk-ant-api03-...")
+# client = anthropic.Anthropic(api_key="sk-ant-api03-REDACTED")
 ```
 
 Git stores every version forever. Deleting a line adds a new commit; it does

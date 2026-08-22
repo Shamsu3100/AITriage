@@ -1,0 +1,14 @@
+# Render Blueprint. Render reads this and provisions everything itself.
+services:
+  - type: web
+    name: ai-triage
+    runtime: docker
+    plan: free                 # 512 MB RAM, no credit card, sleeps after 15 min
+    healthCheckPath: /health   # Render pings this to know the app is alive
+    envVars:
+      # 'mock' needs no API key and costs nothing. Change it in the Render
+      # dashboard later; do NOT put a real key in this file - it is committed.
+      - key: HYBRID_BACKEND
+        value: mock
+      - key: MAX_USD_PER_DAY
+        value: "1.00"

@@ -6,4 +6,4 @@ python-dotenv==1.0.1
 pydantic==2.10.4
 
 # optional alternative front-end: pip install streamlit
-# streamlit==1.41.1
+# streamlit==1.62.0

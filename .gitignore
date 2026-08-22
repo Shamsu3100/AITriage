@@ -1,4 +1,11 @@
+# secrets
 .env
+
+# generated at runtime - never commit these
+*.log
 *.db
+budget.json
+
+# python
 __pycache__/
 .venv/

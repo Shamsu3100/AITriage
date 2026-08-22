@@ -43,8 +43,12 @@ def main():
         except OSError:
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
-            if "your-key-here" in line or "PASTE_YOUR" in line:
-                continue                       # placeholders are fine
+            # Placeholders and deliberately-documented examples are not leaks.
+            # Real scanners all have an escape hatch; the fix for a false
+            # positive is to mark that ONE line, never to disable the tool.
+            if ("your-key-here" in line or "PASTE_YOUR" in line
+                    or "REDACTED" in line or "allowlist secret" in line):
+                continue
             for label, pat in PATTERNS.items():
                 m = re.search(pat, line)
                 if m:
